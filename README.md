@@ -1,151 +1,138 @@
 # Ritual Quest Passport
 
-**🌐 Canlı dApp: https://ritual-quest-passport.vercel.app**
+**🌐 Live dApp: https://ritual-quest-passport.vercel.app**
 
-Ritual Chain testnet (chain id **1979**) üzerinde çalışan, **soulbound (devredilemez) bir "Ritual
-Passport" NFT** etrafında kurulu bir on-chain quest sistemi. Jenerik bir swap/bridge demosu değil
-— Ritual'ın asıl farkını (zincir üstünde LLM inference, HTTP çağrıları ve otonom
-zamanlanmış görevler) fiilen kullanan 3 görevden oluşuyor. Bu, hem Ritual'ın vizyonuna uygun
-gerçek bir kullanım örneği hem de ileride Discord rolü / airdrop taraması için ölçülebilir,
-on-chain doğrulanabilir bir "kanıt" katmanı.
+🇹🇷 [Türkçe README](README.tr.md)
 
-## Mimarî
+An on-chain quest system built around a **soulbound (non-transferable) "Ritual Passport" NFT**
+on the Ritual Chain testnet (chain id **1979**). Not another generic swap/bridge demo — each of
+the three quests exercises something a normal EVM chain cannot do natively:
 
-- **[`RitualPassport`](src/RitualPassport.sol)** — soulbound ERC-721. Her kullanıcıya en fazla 1
-  token; rozetler `uint8` bitmask olarak (`badgesOf(address)`) tutuluyor. Sadece yetkili quest
-  kontratları `grantBadge` çağırabiliyor. `tokenURI` on-chain, base64 JSON döndürüyor (rozet
-  listesi dahil) — harici bir metadata sunucusu gerekmiyor.
-- **[`AIOracleQuest`](src/quests/AIOracleQuest.sol)** — LLM precompile'ı (`0x0802`,
-  `zai-org/GLM-4.7-FP8`) kullanarak on-chain bir soru sorar. Hatasız (settled) bir cevap
-  `BADGE_AI_ORACLE` kazandırır.
-- **[`HTTPDataQuest`](src/quests/HTTPDataQuest.sol)** — HTTP Call precompile'ı (`0x0801`) ile
-  harici bir URL'den veri çeker. 2xx + hatasız yanıt `BADGE_HTTP_DATA` kazandırır.
-- **[`SchedulerHeartbeatQuest`](src/quests/SchedulerHeartbeatQuest.sol)** — Ritual'ın Scheduler
-  sistem kontratı üzerinden kullanıcıyı 3 kez tekrarlayan bir "heartbeat" çağrısına kaydeder.
-  Üçüncü çağrı `BADGE_SCHEDULER` kazandırır. Zamanlama ücretleri kontratın kendi RitualWallet
-  bakiyesinden karşılanır (`depositForFees`, sadece owner) — kullanıcının kendi RitualWallet
-  yatırımına gerek yok.
+1. 🧠 **On-chain AI inference** — a smart contract runs a real LLM (GLM-4.7, inside a TEE)
+2. 🌐 **Trustless HTTP calls** — a transaction fetches live data from a real HTTPS API
+3. ⏱️ **Native scheduled execution** — recurring calls run autonomously, no keeper bots
 
-Kontratlar sadece precompile çağrısını yapıp cevabı çözümlüyor; LLM/HTTP isteklerinin karmaşık
-ABI encoding'i (13-30 alan) kasıtlı olarak zincir dışında yapılıyor (`scripts/*.sh`, bkz.
-aşağı) — bu hem gas açısından daha verimli hem de Ritual'ın önerdiği pattern.
+Completing each quest mints/updates a soulbound badge on the user's Passport NFT — a
+verifiable, on-chain record of real testnet engagement, readable by anyone (e.g. for future
+Discord role gating or contribution checks).
 
-## Testnette deploy edilmiş adresler (chain 1979)
+## Architecture
 
-| Kontrat | Adres |
+- **[`RitualPassport`](src/RitualPassport.sol)** — soulbound ERC-721. At most one token per
+  address; badges are tracked as a `uint8` bitmask (`badgesOf(address)`). Only authorized
+  quest contracts can call `grantBadge`. `tokenURI` returns fully on-chain base64 JSON
+  (including the earned-badge list) — no external metadata server.
+- **[`AIOracleQuest`](src/quests/AIOracleQuest.sol)** — asks a question through the LLM
+  precompile (`0x0802`, `zai-org/GLM-4.7-FP8`). A settled, non-error response grants
+  `BADGE_AI_ORACLE`.
+- **[`HTTPDataQuest`](src/quests/HTTPDataQuest.sol)** — fetches external data through the
+  HTTP Call precompile (`0x0801`). A 2xx response with no executor error grants
+  `BADGE_HTTP_DATA`.
+- **[`SchedulerHeartbeatQuest`](src/quests/SchedulerHeartbeatQuest.sol)** — registers the
+  user for 3 recurring "heartbeat" calls via Ritual's native Scheduler system contract. The
+  third heartbeat grants `BADGE_SCHEDULER`. Execution fees are sponsored from the quest
+  contract's own RitualWallet balance (`depositForFees`, owner-only) — users don't need
+  their own deposit for this quest.
+
+The contracts only forward the precompile call and decode the response envelope; the complex
+ABI encoding of LLM/HTTP requests (13–30 fields) is deliberately done off-chain (in the
+frontend and in `scripts/*.sh`) — cheaper on gas and the pattern Ritual recommends.
+
+## Deployed addresses (chain 1979)
+
+| Contract | Address |
 |---|---|
 | RitualPassport | `0x36AAC257c662A35008c40EDe3A022b0b78f44f83` |
 | AIOracleQuest | `0x81Dbb44d907b65967874b5ce8C66db0c109eF1E7` |
 | HTTPDataQuest | `0x3a18F9282aBeC3c86DF1f1259f2989Ea33aDaBDe` |
 | SchedulerHeartbeatQuest | `0xEF9D3CdA66868CEef7C0D5172AaC7ABd9323aD50` |
 
-Explorer: `https://explorer.ritualfoundation.org/address/<adres>`
+Explorer: `https://explorer.ritualfoundation.org/address/<address>`
 
-Owner cüzdanı bu üç görevi de testnette gerçek işlemlerle tamamladı — tek bir işlemde LLM modeli
-gerçek bir cevap üretti, HTTP çağrısı ETH fiyatını çekti ve Scheduler 3 kez heartbeat tetikledi.
-Sonuç: `badgesOf(owner) == 7` (tüm rozetler, `AI Oracle, HTTP Data, Scheduler`).
+All three quests have been completed end-to-end with real transactions on testnet: the
+on-chain LLM produced a real answer, the HTTP call fetched the live ETH price, and the
+Scheduler fired 3 autonomous heartbeats — resulting in `badgesOf(owner) == 7` (all badges).
 
-## Kurulum
+## Getting started
 
 ```bash
-forge install   # zaten yapıldıysa gerekmez (lib/ altında forge-std + openzeppelin-contracts v5.0.2)
 forge build
-forge test -vv  # 21 unit test (vm.mockCall ile precompile mock'lanıyor)
+forge test -vv   # 21 unit tests (precompiles mocked with vm.mockCall)
 ```
 
-> **Not:** OpenZeppelin v5.0.2 kullanılıyor (v5.1+'daki `Bytes.sol` yardımcıları `mcopy` opcode'una
-> ihtiyaç duyuyor — Cancun-only). Ritual dokümantasyonundaki örnek `foundry.toml`
-> `evm_version = "shanghai"` önerdiği için daha eski bir OZ sürümüyle uyumluluk tercih edildi.
+> **Note:** OpenZeppelin v5.0.2 is used (v5.1+ `Bytes.sol` helpers require the Cancun-only
+> `mcopy` opcode). Ritual's reference `foundry.toml` targets `evm_version = "shanghai"`, so an
+> older OZ release keeps compatibility.
 
-## Deploy
+## Deploy your own
 
 ```bash
 cp .env.example .env
-# .env içine PRIVATE_KEY'ini gir (deployer/owner EOA). ASLA commit etme.
+# Fill in PRIVATE_KEY (deployer/owner EOA). NEVER commit the real value.
 
 source .env
 forge script script/Deploy.s.sol:DeployScript --rpc-url "$RITUAL_RPC_URL" --broadcast -vvv
-# Çıktıdaki 4 adresi .env'e (RITUAL_PASSPORT_ADDRESS, AI_ORACLE_QUEST_ADDRESS, ...) yapıştır.
+# Paste the 4 printed addresses back into .env
 ```
 
-Deploy script otomatik olarak 3 quest kontratını `RitualPassport.setQuestAuthorized` ile
-yetkilendiriyor.
+The deploy script wires up quest authorization on the Passport automatically.
 
-## Görevleri testnette çalıştırma
+## Frontend (public quest UI)
 
-Her görev için hazır bir bash scripti var (sadece `cast` kullanıyor, Node.js gerekmiyor):
+`frontend/` contains a Next.js 14 + wagmi v2 + viem app: connect wallet → 3 quest buttons →
+live badge showcase. The UX:
 
-```bash
-./scripts/complete_http_quest.sh                       # varsayılan URL: CoinGecko ETH fiyatı
-./scripts/complete_http_quest.sh "https://api.example.com/..."
-
-./scripts/complete_ai_quest.sh                          # varsayılan soru
-./scripts/complete_ai_quest.sh "Ritual Chain'de agent nasıl çalışır?"
-
-./scripts/complete_scheduler_quest.sh                   # varsayılan frequency: 15 blok
-./scripts/complete_scheduler_quest.sh 20
-```
-
-Her script kendi başına: gerekli executor'ı `TEEServiceRegistry`'den bulur, `RitualWallet`
-bakiyesini gerekirse doldurur (deposit), isteği ABI-encode eder, işlemi gönderir ve rozet
-durumunu (`badgesOf`) yazdırır. Aynı cüzdanla tekrar çalıştırmak güvenlidir (rozetler idempotent).
-
-### Manuel adımlar (script'lerin içinde ne olduğu)
-
-Executor bulma (HTTP_CALL=0, LLM=1):
-```bash
-cast call 0x9644e8562cE0Fe12b4deeC4163c064A8862Bf47F \
-  "getServicesByCapability(uint8,bool)(((address,address,uint8,bytes,string,bytes32,uint8),bool,bytes32)[])" \
-  0 true --rpc-url "$RITUAL_RPC_URL"
-```
-
-RitualWallet'a yatırım:
-```bash
-cast send 0x532F0dF0896F353d8C3DD8cc134e8129DA2a3948 "deposit(uint256)" 100000 \
-  --value 0.5ether --private-key "$PRIVATE_KEY" --rpc-url "$RITUAL_RPC_URL"
-```
-
-`cast send` async precompile çağrılarında receipt beklerken donabiliyor (bilinen bir davranış —
-node async job'u commit+settle edene kadar receipt sorgusu uzun sürebiliyor). Bu yüzden
-script'ler `--async` ile tx hash'i hemen alıp `cast receipt <hash> --async` ile ayrıca
-poll ediyor.
-
-## Gaz / deposit notları (testnette gözlemlenen)
-
-- HTTP çağrısı: ~0.01 RITUAL depozito yeterli, gerçek maliyet çok daha düşük.
-- LLM çağrısı (`GLM-4.7-FP8`): worst-case escrow ~0.31 RITUAL/eşzamanlı çağrı; 0.5 RITUAL
-  depozito güvenli. `maxCompletionTokens >= 4096` şart (reasoning modeli), `ttl >= 300` blok.
-- Scheduler: 3 heartbeat × (gasLimit × maxFeePerGas) — birkaç 0.001 RITUAL mertebesinde;
-  `depositForFees` ile kontrata 0.05 RITUAL yatırmak fazlasıyla yeterli.
-- Ölçülen ortalama blok süresi bu ağda ~200ms (dokümandaki "muhafazakâr" 350ms'den hızlı).
-
-## Frontend (herkese açık quest arayüzü)
-
-`frontend/` altında Next.js 14 + wagmi v2 + viem ile yazılmış, cüzdan bağla → 3 quest butonu →
-rozet durumu gösteren bir arayüz var. Kullanıcı deneyimi:
-
-1. **Connect Wallet** (MetaMask vb. injected cüzdan) — Ritual ağı (1979) cüzdanda yoksa
-   otomatik ekleme/geçiş teklif edilir.
-2. Her quest tek buton: arayüz executor'ı `TEEServiceRegistry`'den bulur, gerekiyorsa
-   `RitualWallet` depozitosunu otomatik ister (HTTP için 0.05, LLM için 0.5 RITUAL),
-   precompile isteğini ABI-encode eder, işlemi gönderir ve rozet gelene kadar bekler.
-3. Rozetler `badgesOf` üzerinden canlı gösterilir; tamamlanan quest butonu "Completed ✓" olur.
+1. **Connect Wallet** (MetaMask or any injected wallet) — offers to add/switch to the Ritual
+   network (1979) automatically.
+2. Each quest is one button: the app discovers a TEE executor from `TEEServiceRegistry`,
+   auto-deposits the `RitualWallet` fee escrow when needed (0.05 RITUAL for HTTP, 0.5 for
+   LLM — checking both balance *and* lock expiry), ABI-encodes the precompile request,
+   submits the transaction, and confirms the badge bit actually landed on-chain before
+   declaring success.
+3. Badges display live as glowing medals; completing all three unlocks a **Share on X** button.
 
 ```bash
 cd frontend
 npm install
 npm run dev     # http://localhost:3000
-npm run build   # prod build (Vercel'e deploy edilebilir)
+npm run build   # production build (deployable to Vercel)
 ```
 
-Deploy edilmiş kontrat adresleri `frontend/lib/addresses.ts` içinde varsayılan olarak gömülü;
-yeniden deploy durumunda `NEXT_PUBLIC_*_ADDRESS` env değişkenleriyle override edilebilir.
+Deployed contract addresses ship as defaults in `frontend/lib/addresses.ts` and can be
+overridden with `NEXT_PUBLIC_*_ADDRESS` env vars after a redeploy.
 
-## Kapsam dışı bırakılanlar (bilinçli olarak)
+## CLI scripts
 
-- **Discord bot** kasıtlı olarak dahil edilmedi. `RitualPassport.badgesOf(address)` public ve
-  view olduğu için, ileride bir bot (veya collab.land benzeri bir servis) kullanıcının imzalı
-  cüzdan adresini bu fonksiyonla sorgulayıp role atayabilir — sıfırdan tasarım gerekmiyor.
-- Kontrat kaynak doğrulaması (`forge verify-contract --verifier custom`) Ritual'ın custom
-  verifier endpoint'inde 403 ile başarısız oldu; kontratlar çalışıyor ama explorer'da henüz
-  "Verified" görünmüyor.
+Each quest can also be completed from the command line with plain `cast` (no Node.js):
+
+```bash
+./scripts/complete_http_quest.sh                 # default: CoinGecko ETH price
+./scripts/complete_ai_quest.sh "your question"
+./scripts/complete_scheduler_quest.sh            # default frequency: 15 blocks
+```
+
+Each script discovers an executor, tops up the RitualWallet deposit (balance + lock check),
+encodes the request, submits, and prints the resulting badge state. Re-running with the same
+wallet is safe (badges are idempotent).
+
+## Fee / deposit notes (observed on testnet)
+
+- HTTP call: ~0.01 RITUAL deposit is plenty; actual cost is far lower.
+- LLM call (`GLM-4.7-FP8`): worst-case escrow is ~0.31 RITUAL per in-flight call; a 0.5
+  RITUAL deposit is safe. `maxCompletionTokens >= 4096` is required (reasoning model), and
+  `ttl >= 300` blocks.
+- Scheduler: 3 heartbeats × (gasLimit × maxFeePerGas) — a few 0.001 RITUAL; 0.1 RITUAL in
+  the quest contract covers dozens of users.
+- **RitualWallet locks expire fast**: async calls require the deposit to be *locked* through
+  `commit_block + ttl`, and blocks are ~200ms — a 100k-block lock lasts only ~6 hours. The
+  frontend and scripts check `lockUntil` and re-extend automatically (2M blocks ≈ 4–5 days).
+  The Scheduler quest contract's sponsor deposit must be re-extended by the owner
+  periodically via `depositForFees`.
+
+## Deliberately out of scope
+
+- **Discord bot** — intentionally not included. `RitualPassport.badgesOf(address)` is public
+  and view, so any bot (or a collab.land-style service) can verify a user's signed wallet
+  address against it and assign roles — no new design needed.
+- Contract source verification on the explorer currently fails with a 403 from Ritual's
+  custom verifier endpoint; the contracts work fine but don't show as "Verified" yet.
