@@ -1,0 +1,17 @@
+# Environment — contains PRIVATE_KEY, never commit
+.env
+.env.local
+*.env
+
+# Foundry
+out/
+cache/
+
+# Node / Next.js
+node_modules/
+.next/
+.vercel/
+
+# OS
+.DS_Store
+Thumbs.db
